@@ -7,7 +7,9 @@
 
 ## 快速开始
 
-### 安装
+### 本地运行
+
+#### 安装
 
 ```bash
 git clone https://github.com/yourusername/game2notion.git
@@ -15,13 +17,13 @@ cd game2notion
 
 # 创建虚拟环境
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
 # 安装依赖
 pip install -r requirements.txt
 ```
 
-### 配置
+#### 配置
 
 ```bash
 # 复制环境变量示例
@@ -35,7 +37,7 @@ cp .env.example .env
 # NOTION_DAILY_RECORDS_DB_ID=your_id
 ```
 
-### 使用
+#### 运行
 
 ```bash
 # 同步所有游戏
@@ -54,18 +56,49 @@ python -m src.daily_game_records
 python -m src.notion_game_list --debug
 ```
 
-### Makefile 快捷命令
+## GitHub Actions 自动化部署
 
-```bash
-make install    # 安装依赖
-make dev        # 安装开发工具
-make run        # 运行游戏同步
-make run-daily  # 运行每日记录同步
-make test       # 运行测试
-make lint       # 代码检查
-make format     # 代码格式化
-make check      # 完整检查
-```
+项目已配置 GitHub Actions 工作流（`.github/workflows/deploy.yml`），支持自动定时同步。
+
+### 定时任务（北京时间）
+
+- **00:00** - 运行 `daily_game_records`
+- **12:00** - 运行 `daily_game_records`
+- **14:00** - 运行 `notion_game_list`
+
+### 部署步骤
+
+1. **提交到 GitHub**
+   ```bash
+   git add .
+   git commit -m "chore: setup github actions automation"
+   git push origin main
+   ```
+
+2. **配置 Secrets**
+   
+   打开 GitHub 项目 → Settings → Secrets and variables → Actions，添加：
+   
+   - `STEAM_API_KEY` - https://steamcommunity.com/dev/apikey
+   - `STEAM_USER_ID` - https://steamid.io/
+   - `NOTION_API_KEY` - https://www.notion.so/my-integrations
+   - `NOTION_GAMES_DATABASE_ID`
+   - `NOTION_DAILY_RECORDS_DB_ID`
+
+3. **启用工作流**
+   
+   打开 Actions 标签页，确认工作流已启用。可点击 "Run workflow" 手动测试。
+
+### 修改运行时间
+
+编辑 `.github/workflows/deploy.yml` 中的 `cron` 表达式（UTC 时区）：
+
+**时区转换（北京时间 → UTC）：**
+- 北京时间 08:00 → UTC 00:00 (`cron: '0 0 * * *'`)
+- 北京时间 12:00 → UTC 04:00 (`cron: '0 4 * * *'`)
+- 北京时间 14:00 → UTC 06:00 (`cron: '0 6 * * *'`)
+- 北京时间 20:00 → UTC 12:00 (`cron: '0 12 * * *'`)
+- 北京时间 23:59 → UTC 15:59 (`cron: '59 15 * * *'`)
 
 ## 项目结构
 
@@ -79,7 +112,7 @@ src/
     └── steam.py           # Steam API 接口
 
 tests/                      # 单元测试
-.github/workflows/ci.yml    # GitHub Actions CI/CD
+.github/workflows/          # GitHub Actions 工作流
 ```
 
 ## 功能
@@ -89,6 +122,7 @@ tests/                      # 单元测试
 - 🏆 游戏成就信息
 - 📅 每日游玩记录
 - 🔄 增量/全量更新
+- ⏰ 定时自动化同步
 
 ## API Keys
 

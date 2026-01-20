@@ -28,4 +28,3 @@
 - 项目结构优化（GitHub 标准结构）
 - 添加 `platforms` 模块管理多平台支持
 - CI/CD GitHub Actions 工作流配置
-- 完整的 Python 包配置 (setup.py, pyproject.toml)
