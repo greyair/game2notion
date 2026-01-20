@@ -10,7 +10,7 @@ from config import (
     STEAM_API_KEY, STEAM_USER_ID, NOTION_API_KEY,
     NOTION_GAMES_DATABASE_ID, NOTION_DAILY_RECORDS_DB_ID
 )
-from gameplatform.steam1 import get_steam_recent_games
+from platforms.steam import get_steam_recent_games
 from utils import send_request_with_retry
 
 # ==================== 常量 ====================

@@ -9,12 +9,12 @@ import os
 #load_dotenv()
 
 # ==================== STEAM 配置 ====================
-STEAM_API_KEY = os.environ.get("STEAM_API_KEY") or '***REMOVED***'
-STEAM_USER_ID = os.environ.get("STEAM_USER_ID") or '***REMOVED***'
+STEAM_API_KEY = os.environ.get("STEAM_API_KEY") or ''
+STEAM_USER_ID = os.environ.get("STEAM_USER_ID") or ''
 
 # ==================== NOTION 配置 ====================
-NOTION_API_KEY = os.environ.get("NOTION_API_KEY") or '***REMOVED***'
-NOTION_GAMES_DATABASE_ID = os.environ.get("NOTION_GAMES_DATABASE_ID") or '***REMOVED***'
+NOTION_API_KEY = os.environ.get("NOTION_API_KEY") or ''
+NOTION_GAMES_DATABASE_ID = os.environ.get("NOTION_GAMES_DATABASE_ID") or ''
 NOTION_DAILY_RECORDS_DB_ID = os.environ.get("NOTION_DAILY_RECORDS_DB_ID")
 
 # ==================== NOTION 属性名映射 ====================
