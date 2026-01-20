@@ -4,7 +4,8 @@ import time
 import os
 import logging
 from utils import send_request_with_retry, parse_steam_date
-from gameplatform.steam import get_steam_review_info, get_steam_store_info, get_owned_game_data_from_steam, get_steam_achievements_count
+from gameplatform.steam import get_steam_review_info, get_owned_game_data_from_steam, get_steam_achievements_count
+from gameplatform.steam1 import get_steam_store_info
 
 # CONFIG
 STEAM_API_KEY = os.environ.get("STEAM_API_KEY") or '***REMOVED***'
@@ -45,37 +46,33 @@ def add_item_to_notion_database(game, achievements_info, review_text, steam_stor
     earliest_unlock = {"start": time.strftime("%Y-%m-%d", time.localtime(achievements_info["earliest_unlock"])) } if achievements_info["earliest_unlock"] else None
     release_date = {"start": parse_steam_date(steam_store_data['release_date']).isoformat()} if parse_steam_date(steam_store_data['release_date']) else None
 
-    if total_achievements > 0:
-        completion = round(
-            float(achieved_achievements) / float(total_achievements) * 100, 1
-        )
-    else:
-        completion = -1
-
     data = {
         "parent": {
             "type": "database_id",
             "database_id": f"{NOTION_DATABASE_ID}",
         },
         "properties": {
-            "游戏名称": {"type": "title","title": [{"type": "text", "text": {"content": f"{game['name']}"}}],},
-            "游戏英文名": {"type": "rich_text", "rich_text": [{"type": "text", "text": {"content": f"{steam_store_data['eng_name']}"}},]},
+            "游戏名称": {"type": "title","title": [{"type": "text", "text": {"content": f"{game['name']}"}}]},
+            "游戏商品名": {"type": "rich_text", "rich_text": [{"type": "text", "text": {"content": f"{steam_store_data['game_name']}"}}]},
             "游戏时长": {"type": "number", "number": playtime},
-            "游戏类型": {"type": "multi_select", "multi_select": constract_notion_multi_select_property(steam_store_data['genres'])},
-            "开发商": {"type": "multi_select", "multi_select": constract_notion_multi_select_property(steam_store_data['developers'])},
-            "发行商": {"type": "multi_select", "multi_select": constract_notion_multi_select_property(steam_store_data['publishers'])},
+            "游戏类型": {"type": "multi_select", "multi_select": build_notion_multi_select(steam_store_data['genres'])},
+            "开发商": {"type": "multi_select", "multi_select": build_notion_multi_select(steam_store_data['developers'])},
+            "发行商": {"type": "multi_select", "multi_select": build_notion_multi_select(steam_store_data['publishers'])},
             "发行日期": {"type": "date", "date": release_date},
             "上次游玩时间": {"type": "date", "date": last_played_time},
-            "商店链接": {"type": "url","url": store_url },
+            "商店链接": {"type": "url", "url": store_url},
             "成就总数": {"type": "number", "number": total_achievements},
-            "获得成就": {"type": "number","number": achieved_achievements},
+            "获得成就": {"type": "number", "number": achieved_achievements},
             "成就首次解锁": {"type": "date", "date": earliest_unlock},
-            "游戏简介": { "type": "rich_text", "rich_text": [{"type": "text", "text": { "content": steam_store_data["info"] }}, ]},
-            "游戏标签": {"type": "multi_select","multi_select": constract_notion_multi_select_property(steam_store_data['tag'])},
+            "游戏简介": {"type": "rich_text", "rich_text": [{"type": "text", "text": {"content": steam_store_data["info"]}}]},
+            "游戏标签": {"type": "multi_select", "multi_select": build_notion_multi_select(steam_store_data['tag'])},
             "游戏平台": {"type": "select", "select": {"name": "Steam"}},
+            "商店价格": {"type": "rich_text", "rich_text": [{"type": "text", "text": {"content": steam_store_data["price"]}}]},
+            "玩家评分": {"type": "select", "select": {"name": steam_store_data["review"]}},
+            "appid": {"type": "rich_text", "rich_text": [{"type": "text", "text": {"content": f"{game['appid']}"}}]},
         },
-        "cover": {"type": "external", "external": {"url": f"{cover_url}"}},
-        "icon": {"type": "external", "external": {"url": f"{icon_url}"}},
+        "cover": {"type": "external", "external": {"url": cover_url}},
+        "icon": {"type": "external", "external": {"url": icon_url}},
     }
 
     try:
@@ -111,11 +108,11 @@ def query_notion_games():
         for page in result["results"]:
             props = page.get("properties", {})
             try:
-                # 读取游戏英文名
-                game_engname = props.get("游戏英文名", {}).get("rich_text", [])
-                if not game_engname:
+                # 读取游戏名
+                game_name = props.get("游戏名称", {}).get("title", [])
+                if not game_name:
                     continue
-                engname = game_engname[0]["plain_text"]
+                name = game_name[0]["plain_text"]
 
                 # 读取游戏平台
                 platform_info = props.get("游戏平台", {}).get("select", {})
@@ -125,8 +122,8 @@ def query_notion_games():
                 date_info = props.get("上次游玩时间", {}).get("date", {})
                 last_played = date_info.get("start") if date_info else None
 
-                # 用 (英文名, 平台) 作为键
-                key = (engname, platform)
+                # 用 (游戏名, 平台) 作为键
+                key = (name, platform)
                 notion_games[key] = last_played
             except Exception as e:
                 logger.warning(f"跳过一项，读取失败：{e}")
@@ -157,8 +154,6 @@ def query_item_from_notion_database(game):
         logger.error(f"Failed to send request: {e} .Error: {response.text}")
     finally:
         return response.json()
-
-
 
 def update_item_to_notion_database(page_id, game, achievements_info, review_text, steam_store_data):
     url = f"https://api.notion.com/v1/pages/{page_id}"
@@ -194,11 +189,11 @@ def update_item_to_notion_database(page_id, game, achievements_info, review_text
                 "type": "title",
                 "title": [{"type": "text", "text": {"content": f"{steam_store_data['game_name']}"}}],
             },
-            "游戏英文名": {"type": "rich_text", "rich_text": [{"type": "text", "text": {"content": f"{steam_store_data['eng_name']}"}},]},
+            "游戏商品名": {"type": "rich_text", "rich_text": [{"type": "text", "text": {"content": f"{game['name']}"}},]},
             "游戏时长": {"type": "number", "number": playtime},
-            "游戏类型": {"type": "multi_select", "multi_select": constract_notion_multi_select_property(steam_store_data['genres'])},
-            "开发商": {"type": "multi_select", "multi_select": constract_notion_multi_select_property(steam_store_data['developers'])},
-            "发行商": {"type": "multi_select", "multi_select": constract_notion_multi_select_property(steam_store_data['publishers'])},
+            "游戏类型": {"type": "multi_select", "multi_select": build_notion_multi_select(steam_store_data['genres'])},
+            "开发商": {"type": "multi_select", "multi_select": build_notion_multi_select(steam_store_data['developers'])},
+            "发行商": {"type": "multi_select", "multi_select": build_notion_multi_select(steam_store_data['publishers'])},
             "发行日期": {"type": "rich_text", "rich_text": [{"type": "text", "text": {"content": f"{steam_store_data['release_date']}"}}, ]},
             "上次游玩时间": {"type": "date", "date": {"start": last_played_time}},
             "商店链接": {"type": "url","url": store_url },
@@ -207,7 +202,8 @@ def update_item_to_notion_database(page_id, game, achievements_info, review_text
             "成就首次解锁": {"type": "date", "date": {"start": earliest_unlock}},
             "进度": {"type": "number", "number": completion},
             "游戏简介": { "type": "rich_text", "rich_text": [{"type": "text", "text": { "content": steam_store_data["info"] }}, ]},
-            "游戏标签": {"type": "multi_select","multi_select": constract_notion_multi_select_property(steam_store_data['tag'])}
+            "游戏标签": {"type": "multi_select","multi_select": build_notion_multi_select(steam_store_data['tag'])},
+            "appid": {"type": "rich_text", "rich_text": [{"type": "text", "text": {"content": f"{game['appid']}"}}],},
         },
         "cover": {"type": "external", "external": {"url": f"{cover_url}"}},
         "icon": {"type": "external", "external": {"url": f"{icon_url}"}},
@@ -287,6 +283,25 @@ def constract_notion_multi_select_property(tags):
 
     return options
 
+def build_notion_multi_select(value):
+    """
+    value 支持：
+      - None / ""              -> 清空
+      - "A, B"                 -> ["A", "B"]
+      - ["A", "B, C"]          -> ["A", "B", "C"]
+      - ["A", "B", "C"]        -> 原样
+    """
+    if not value: return []
+
+    if isinstance(value, str):
+        value = [value]
+    items = [
+        x.strip()
+        for s in value
+        for x in (s.split(",") if isinstance(s, str) else [s])
+        if str(x).strip()
+    ]
+    return [{"name": item} for item in items]
 
 
 if __name__ == "__main__":
@@ -314,7 +329,7 @@ if __name__ == "__main__":
         logger.addHandler(console_handler)
 
     notion_games = query_notion_games()
-    test = get_steam_store_info(2622380)
+    test = get_steam_store_info(34330)
     owned_game_steam = get_owned_game_data_from_steam(STEAM_API_KEY, STEAM_USER_ID, include_played_free_games)
 
     if len(owned_game_steam["response"]) == 0 or owned_game_steam["response"]["games"] == []:
@@ -335,15 +350,17 @@ if __name__ == "__main__":
             continue
 
         # 用 (英文名, 平台) 作为键查找
-        game_key = (steam_store_data["eng_name"], "Steam")
+        game_key = (game["name"], "Steam")
         
         if game_key not in notion_games:
             logger.info(f"{game['name']} does not exist! creating new item!")
+            print(f"Adding {game['name']} to Notion database...")
             add_item_to_notion_database(game, achievements_info, '', steam_store_data)
         else:
             if enable_item_update == "true":
                 logger.info(f"{game['name']} already exists! updating!")
             else:
                 logger.info(f"{game['name']} already exists! skipping!")
-        time.sleep(1)  # 避免请求过快
+            print(f"Updating {game['name']} in Notion database...")
+        time.sleep(5)  # 避免请求过快
 

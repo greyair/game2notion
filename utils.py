@@ -6,9 +6,9 @@ MAX_RETRIES = 20
 RETRY_DELAY = 2
 
 def send_request_with_retry(
-    url, headers=None, json_data=None, retries=MAX_RETRIES, method="patch"
+    url, headers=None, json_data=None, method="post", max_retries=3
 ):
-    while retries > 0:
+    for attempt in range(max_retries):
         try:
             if method == "patch":
                 response = requests.patch(url, headers=headers, json=json_data)
@@ -19,14 +19,29 @@ def send_request_with_retry(
 
             response.raise_for_status()  # 如果响应状态码不是200系列，则抛出HTTPError异常
             return response
-        except requests.exceptions.RequestException as e:
-            print(f"Request Exception occurred: <{e}> .Error: {response.text},Retring....")
-            retries -= 1
-            if retries > 0:
-                time.sleep(RETRY_DELAY)  # 等待一段时间后再重试
+        
+        except requests.exceptions.HTTPError as e:
+            # HTTP 错误（4xx, 5xx）
+            print(f"Request Exception occurred: <{e}> .Error: {e.response.text}")
+            if attempt < max_retries - 1:
+                print(f"Retrying... (Attempt {attempt + 1}/{max_retries})")
+                time.sleep(2 ** attempt)  # 指数退避
             else:
-                print(f"Max retries exceeded .Error: {response.text},Giving up.")
-                return {}
+                raise
+        
+        except requests.exceptions.RequestException as e:
+            # 其他网络错误（SSL, 超时等）
+            print(f"Request Exception occurred: <{e}>")
+            if attempt < max_retries - 1:
+                print(f"Retrying... (Attempt {attempt + 1}/{max_retries})")
+                time.sleep(2 ** attempt)  # 指数退避
+            else:
+                raise
+        
+        except Exception as e:
+            # 未预期的错误
+            print(f"Unexpected error: <{e}>")
+            raise
 
 def parse_steam_date(text: str): 
     text = text.strip() 
