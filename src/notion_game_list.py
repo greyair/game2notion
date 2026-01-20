@@ -13,7 +13,7 @@ from config import (
     NOTION_PROPERTIES, include_played_free_games, enable_item_update, enable_filter, MAX_RETRIES, RETRY_DELAY,
     get_property_name
 )
-from gameplatform.steam1 import (
+from platforms.steam import (
     get_owned_games_from_steam, get_achievements_from_steam, 
     parse_achievements_info, get_steam_store_info
 )
