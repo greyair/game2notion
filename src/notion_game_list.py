@@ -5,12 +5,11 @@ Steam 游戏信息同步到 Notion
 
 import argparse
 import time
-import logging
 from datetime import datetime
 from config import (
     STEAM_API_KEY, STEAM_USER_ID, NOTION_API_KEY, NOTION_GAMES_DATABASE_ID,
     NOTION_DAILY_RECORDS_DB_ID,
-    include_played_free_games, enable_item_update, enable_filter,
+    include_played_free_games, enable_item_update, enable_filter, enable_full_update,
     TIMEZONE,
     get_property_name
 )
@@ -164,6 +163,42 @@ def build_game_properties(game, achievements_info, steam_store_data):
     return props
 
 
+def build_update_properties(game, achievements_info, steam_store_data, full_update=False):
+    """构建更新属性数据（默认仅更新核心字段）"""
+    if full_update:
+        return build_game_properties(game, achievements_info, steam_store_data)
+
+    playtime = int(game.get("playtime_forever", 0))
+    last_played_time = format_timestamp(game.get("rtime_last_played"), TIMEZONE, date_only=False)
+    achieved_achievements = achievements_info.get("achieved", -1)
+    review = steam_store_data.get("review", "")
+
+    props = {
+        get_property_name("playtime"): {
+            "type": "number",
+            "number": playtime
+        },
+        get_property_name("achieved_achievements"): {
+            "type": "number",
+            "number": achieved_achievements
+        }
+    }
+
+    if last_played_time:
+        props[get_property_name("last_play")] = {
+            "type": "date",
+            "date": {"start": last_played_time}
+        }
+
+    if review:
+        props[get_property_name("review")] = {
+            "type": "select",
+            "select": {"name": review}
+        }
+
+    return props
+
+
 def build_page_data(game, achievements_info, steam_store_data, is_update=False):
     """构建 Notion page 数据"""
     properties = build_game_properties(game, achievements_info, steam_store_data)
@@ -276,7 +311,7 @@ def add_game_to_notion(game, achievements_info, steam_store_data):
         return False
 
 
-def update_game_in_notion(page_id, game, achievements_info, steam_store_data):
+def update_game_in_notion(page_id, game, achievements_info, steam_store_data, force_update=None):
     """更新游戏信息在 Notion"""
     url = f"https://api.notion.com/v1/pages/{page_id}"
     headers = {
@@ -284,8 +319,12 @@ def update_game_in_notion(page_id, game, achievements_info, steam_store_data):
         "Notion-Version": "2022-06-28",
         "Content-Type": "application/json"
     }
-    
-    data = build_page_data(game, achievements_info, steam_store_data, is_update=True)
+
+    if force_update is None:
+        force_update = enable_full_update
+
+    properties = build_update_properties(game, achievements_info, steam_store_data, full_update=force_update)
+    data = {"properties": properties}
     
     try:
         response = send_request_with_retry(url, headers=headers, json_data=data, method="patch")
@@ -415,9 +454,9 @@ def sync_games_to_notion(sync_daily=False):
         game_key = (game_name, "Steam")
         notion_game = notion_games_map.get(game_key)
         
-        if notion_game and notion_game["last_play"] is not None:
+        if notion_game:
             # 游戏已存在 -> 更新
-            if enable_item_update:
+            if enable_item_update and (notion_game["last_play"] is not None):
                 page_id = notion_game["page_id"]
                 last_play = notion_game["last_play"]
                 logger.info(f"⊘ 上次游玩: {last_play}")
@@ -497,7 +536,7 @@ def add_single_game_by_appid(appid):
             # 游戏已存在 -> 强制更新
             logger.info(f"游戏已存在于 Notion，执行强制更新: {game_name}")
             page_id = notion_game["page_id"]
-            if update_game_in_notion(page_id, game, achievements_info, steam_store_data):
+            if update_game_in_notion(page_id, game, achievements_info, steam_store_data, force_update=True):
                 logger.info("✓ 强制更新成功")
                 return True
             else:

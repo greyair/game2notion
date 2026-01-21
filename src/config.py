@@ -53,6 +53,7 @@ NOTION_DAILY_PROPERTIES = {
 include_played_free_games = os.environ.get("include_played_free_games", "true").lower() == "true"
 enable_item_update = os.environ.get("enable_item_update", "true").lower() == "true"
 enable_filter = os.environ.get("enable_filter", "false").lower() == "true"
+enable_full_update = os.environ.get("enable_full_update", "false").lower() == "true"
 
 # 日期/时间配置
 TIMEZONE = os.environ.get("TIMEZONE", "Asia/Shanghai")
