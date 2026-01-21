@@ -41,7 +41,7 @@ cp .env.example .env
 
 ```bash
 # 同步所有游戏
-python -m src.notion_game_list
+python -m src.notion_game_list sync
 
 # 添加单个游戏 (by AppID)
 python -m src.notion_game_list add 730
@@ -49,8 +49,8 @@ python -m src.notion_game_list add 730
 # 添加多个游戏
 python -m src.notion_game_list add 730,570
 
-# 同步每日游玩记录
-python -m src.daily_game_records
+# 同步游戏库 + 每日记录
+python -m src.notion_game_list sync --daily
 
 # 调试模式
 python -m src.notion_game_list --debug
@@ -62,9 +62,7 @@ python -m src.notion_game_list --debug
 
 ### 定时任务（北京时间）
 
-- **00:00** - 运行 `daily_game_records`
-- **12:00** - 运行 `daily_game_records`
-- **14:00** - 运行 `notion_game_list`
+- **23:55** - 运行 `notion_game_list sync --daily`
 
 ### 部署步骤
 
@@ -94,11 +92,7 @@ python -m src.notion_game_list --debug
 编辑 `.github/workflows/deploy.yml` 中的 `cron` 表达式（UTC 时区）：
 
 **时区转换（北京时间 → UTC）：**
-- 北京时间 08:00 → UTC 00:00 (`cron: '0 0 * * *'`)
-- 北京时间 12:00 → UTC 04:00 (`cron: '0 4 * * *'`)
-- 北京时间 14:00 → UTC 06:00 (`cron: '0 6 * * *'`)
-- 北京时间 20:00 → UTC 12:00 (`cron: '0 12 * * *'`)
-- 北京时间 23:59 → UTC 15:59 (`cron: '59 15 * * *'`)
+- 北京时间 23:55 → UTC 15:55 (`cron: '55 15 * * *'`)
 
 ## 项目结构
 
@@ -107,7 +101,7 @@ src/
 ├── config.py              # 配置文件
 ├── utils.py               # 工具函数
 ├── notion_game_list.py    # 游戏库同步
-├── daily_game_records.py  # 每日记录同步
+├── migrate_playtime_to_minutes.py  # 迁移游玩时间为分钟
 └── platforms/
     └── steam.py           # Steam API 接口
 
@@ -123,6 +117,48 @@ tests/                      # 单元测试
 - 📅 每日游玩记录
 - 🔄 增量/全量更新
 - ⏰ 定时自动化同步
+
+## Notion 数据库创建指南
+
+### 1) 游戏库数据库（NOTION_GAMES_DATABASE_ID）
+
+在 Notion 新建一个数据库（表格视图），并添加以下属性（名称可自定义，但需在 config.py 中映射）：
+
+- 游戏名称（Title）
+- 游戏商品名（Rich text）
+- 游戏时长（Number，单位：分钟）
+- 游戏类型（Multi-select）
+- 开发商（Multi-select）
+- 发行商（Multi-select）
+- 发行日期（Date）
+- 上次游玩时间（Date，包含时间）
+- 商店链接（URL）
+- 成就总数（Number）
+- 获得成就（Number）
+- 成就首次解锁（Date）
+- 游戏简介（Rich text）
+- 游戏标签（Multi-select）
+- 游戏平台（Select）
+- 商店价格（Rich text）
+- 玩家评分（Select）
+- appid（Rich text）
+
+### 2) 每日记录数据库（NOTION_DAILY_RECORDS_DB_ID）
+
+新建第二个数据库（表格视图），并添加以下属性：
+
+- 日期（Date）
+- 标题（Title）
+- 游戏名称（Relation，关联到游戏库数据库）
+- 游玩时间（Number，单位：分钟）
+- 总游玩时间（Number，单位：分钟）
+
+### 3) 配置数据库 ID
+
+打开数据库页面链接，复制链接中的数据库 ID，填入 `.env` 或 GitHub Secrets：
+
+- NOTION_GAMES_DATABASE_ID
+- NOTION_DAILY_RECORDS_DB_ID
 
 ## API Keys
 
