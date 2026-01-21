@@ -17,6 +17,7 @@ from platforms.steam import (
     get_owned_games_from_steam, get_achievements_from_steam, 
     parse_achievements_info, get_steam_store_info
 )
+from utils import parse_steam_date
 
 logger = logging.getLogger(__name__)
 
@@ -70,23 +71,6 @@ def send_request_with_retry(url, headers=None, json_data=None, method="get", ret
             else:
                 logger.error(f"Max retries exceeded for {url}")
                 raise
-
-
-# ==================== DATA TRANSFORM ====================
-def parse_steam_date(date_str):
-    """解析 Steam 日期字符串"""
-    if not date_str:
-        return None
-    try:
-        # 处理格式: "2025 年 5 月 30 日"
-        return datetime.strptime(date_str, "%Y 年 %m 月 %d 日").date()
-    except Exception:
-        try:
-            # 尝试其他格式
-            return datetime.strptime(date_str.strip(), "%Y-%m-%d").date()
-        except Exception:
-            logger.warning(f"无法解析日期: {date_str}")
-            return None
 
 
 def build_game_properties(game, achievements_info, steam_store_data):

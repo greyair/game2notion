@@ -13,9 +13,9 @@ STEAM_API_KEY = os.environ.get("STEAM_API_KEY") or ''
 STEAM_USER_ID = os.environ.get("STEAM_USER_ID") or ''
 
 # ==================== NOTION 配置 ====================
-NOTION_API_KEY = os.environ.get("NOTION_API_KEY") or ''
-NOTION_GAMES_DATABASE_ID = os.environ.get("NOTION_GAMES_DATABASE_ID") or ''
-NOTION_DAILY_RECORDS_DB_ID = os.environ.get("NOTION_DAILY_RECORDS_DB_ID")
+NOTION_API_KEY = os.environ.get("NOTION_API_KEY") or '***REMOVED***'
+NOTION_GAMES_DATABASE_ID = os.environ.get("NOTION_GAMES_DATABASE_ID") or '***REMOVED***'
+NOTION_DAILY_RECORDS_DB_ID = os.environ.get("NOTION_DAILY_RECORDS_DB_ID") or '***REMOVED***'
 
 # ==================== NOTION 属性名映射 ====================
 # 游戏库属性
