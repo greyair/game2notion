@@ -6,18 +6,18 @@ Steam 游戏信息同步到 Notion
 import argparse
 import time
 from datetime import datetime
-from config import (
+from .config import (
     STEAM_API_KEY, STEAM_USER_ID, NOTION_API_KEY, NOTION_GAMES_DATABASE_ID,
     NOTION_DAILY_RECORDS_DB_ID,
     include_played_free_games, enable_item_update, enable_filter, enable_full_update,
     TIMEZONE,
     get_property_name
 )
-from platforms.steam import (
+from .platforms.steam import (
     get_owned_games_from_steam, get_achievements_from_steam, 
     parse_achievements_info, get_steam_store_info
 )
-from utils import (
+from .utils import (
     format_timestamp,
     format_notion_multi_select,
     get_logger,
