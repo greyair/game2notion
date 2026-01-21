@@ -9,26 +9,35 @@ import logging
 from datetime import datetime
 from config import (
     STEAM_API_KEY, STEAM_USER_ID, NOTION_API_KEY, NOTION_GAMES_DATABASE_ID,
+    NOTION_DAILY_RECORDS_DB_ID,
     include_played_free_games, enable_item_update, enable_filter,
+    TIMEZONE,
     get_property_name
 )
 from platforms.steam import (
     get_owned_games_from_steam, get_achievements_from_steam, 
     parse_achievements_info, get_steam_store_info
 )
-from utils import format_notion_multi_select, get_logger, parse_steam_date, send_request_with_retry
+from utils import (
+    format_timestamp,
+    format_notion_multi_select,
+    get_logger,
+    parse_steam_date,
+    send_request_with_retry,
+    setup_logging,
+)
 
 logger = get_logger(__name__)
 
 
 def build_game_properties(game, achievements_info, steam_store_data):
     """构建游戏属性数据 - 使用配置文件中的属性名和统一的处理方法"""
-    playtime = round(float(game.get("playtime_forever", 0)) / 60, 1)
+    playtime = int(game.get("playtime_forever", 0))
     
     # 处理时间戳为日期字符串（仅当有值时）
-    last_played_time = datetime.fromtimestamp(game["rtime_last_played"]).strftime("%Y-%m-%d") if game.get("rtime_last_played") else None
+    last_played_time = format_timestamp(game.get("rtime_last_played"), TIMEZONE, date_only=False)
     earliest_unlock = achievements_info.get("earliest_unlock")
-    earliest_unlock_time = datetime.fromtimestamp(earliest_unlock).strftime("%Y-%m-%d") if earliest_unlock else None
+    earliest_unlock_time = format_timestamp(earliest_unlock, TIMEZONE, date_only=True)
     
     # 处理发行日期（仅当能解析时）
     release_date_str = steam_store_data.get("release_date", "")
@@ -198,6 +207,7 @@ def query_all_games_from_notion():
     name_prop = get_property_name("name")
     last_play_prop = get_property_name("last_play")
     platform_prop = get_property_name("platform")
+    playtime_prop = get_property_name("playtime")
     
     while has_more:
         data = {"page_size": 100}
@@ -224,10 +234,13 @@ def query_all_games_from_notion():
                     platform_info = props.get(platform_prop, {}).get("select", {})
                     platform = platform_info.get("name") if platform_info else "Unknown"
                     
+                    playtime = props.get(playtime_prop, {}).get("number", 0)
+
                     key = (game_name, platform)
                     games_map[key] = {
                         "page_id": page_id,
-                        "last_play": last_play
+                        "last_play": last_play,
+                        "playtime": playtime
                     }
                 except Exception as e:
                     logger.warning(f"解析游戏信息失败: {e}")
@@ -289,16 +302,16 @@ def should_record_game(game, achievements_info):
     if not enable_filter:
         return True
     
-    playtime = round(float(game.get("playtime_forever", 0)) / 60, 1)
+    playtime = int(game.get("playtime_forever", 0))
     last_played = game.get("rtime_last_played", 0)
     
     # 无游玩时间且无成就 -> 不记录
-    if playtime < 0.1 and achievements_info["total"] < 1:
+    if playtime < 6 and achievements_info["total"] < 1:
         return False
     
     # 长时间未玩且游玩时间少于6小时且无成就 -> 不记录
     week_ago = int(time.time()) - 7 * 86400
-    if last_played < week_ago and playtime < 6 and achievements_info["total"] < 1:
+    if last_played < week_ago and playtime < 360 and achievements_info["total"] < 1:
         return False
     
     return True
@@ -314,12 +327,72 @@ def _fetch_game_details(game):
     return achievements_info, steam_store_data
 
 
+def _create_daily_record(game_name, playtime_today_minutes, playtime_forever_minutes, page_id, record_date):
+    """创建每日游玩记录"""
+    url = "https://api.notion.com/v1/pages"
+    record_date_str = record_date or datetime.now().date().isoformat()
+
+    data = {
+        "parent": {
+            "type": "database_id",
+            "database_id": NOTION_DAILY_RECORDS_DB_ID,
+        },
+        "icon": {
+            "type": "emoji",
+            "emoji": "✅"
+        },
+        "properties": {
+            get_property_name("date", is_daily=True): {
+                "type": "date",
+                "date": {"start": record_date_str}
+            },
+            get_property_name("title", is_daily=True): {
+                "type": "title",
+                "title": [
+                    {
+                        "type": "mention",
+                        "mention": {
+                            "type": "date",
+                            "date": {"start": record_date_str}
+                        }
+                    }
+                ]
+            },
+            get_property_name("game_name", is_daily=True): {
+                "type": "relation",
+                "relation": [{"id": page_id}]
+            },
+            get_property_name("playtime", is_daily=True): {
+                "type": "number",
+                "number": playtime_today_minutes
+            },
+            get_property_name("playtime_forever", is_daily=True): {
+                "type": "number",
+                "number": playtime_forever_minutes
+            }
+        }
+    }
+
+    headers = {
+        "Authorization": f"Bearer {NOTION_API_KEY}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json"
+    }
+
+    send_request_with_retry(url, headers=headers, json_data=data, method="post")
+    logger.info(f"✓ 已记录每日游玩: {game_name} - {playtime_today_minutes}min (累计: {playtime_forever_minutes}min)")
+
+
 # ==================== MAIN ====================
-def sync_games_to_notion():
+def sync_games_to_notion(sync_daily=False):
     """同步 Steam 游戏到 Notion"""
     logger.info("=" * 50)
     logger.info("开始同步 Steam 游戏到 Notion")
     logger.info("=" * 50)
+
+    if sync_daily and not NOTION_DAILY_RECORDS_DB_ID:
+        logger.warning("未配置 NOTION_DAILY_RECORDS_DB_ID，跳过每日记录同步")
+        sync_daily = False
     
     # 获取 Steam 游戏列表
     games = get_owned_games_from_steam(STEAM_API_KEY, STEAM_USER_ID, include_played_free_games)
@@ -342,18 +415,31 @@ def sync_games_to_notion():
         game_key = (game_name, "Steam")
         notion_game = notion_games_map.get(game_key)
         
-        if notion_game:
+        if notion_game and notion_game["last_play"] is not None:
             # 游戏已存在 -> 更新
             if enable_item_update:
                 page_id = notion_game["page_id"]
                 last_play = notion_game["last_play"]
                 logger.info(f"⊘ 上次游玩: {last_play}")
-                game_last_played = datetime.fromtimestamp(game['rtime_last_played']).strftime("%Y-%m-%d") if game['rtime_last_played'] else None
+                game_last_played = format_timestamp(game.get("rtime_last_played"), TIMEZONE, date_only=False)
+                game_last_played_date = format_timestamp(game.get("rtime_last_played"), TIMEZONE, date_only=True)
                 
                 if last_play != game_last_played:
                     achievements_info, steam_store_data = _fetch_game_details(game)
                     if update_game_in_notion(page_id, game, achievements_info, steam_store_data):
                         updated_count += 1
+                        if sync_daily and NOTION_DAILY_RECORDS_DB_ID:
+                            previous_minutes = int(notion_game.get("playtime", 0) or 0)
+                            current_minutes = int(game.get("playtime_forever", 0))
+                            playtime_today_minutes = current_minutes - previous_minutes
+                            if playtime_today_minutes > 0:
+                                _create_daily_record(
+                                    game_name,
+                                    playtime_today_minutes,
+                                    current_minutes,
+                                    page_id,
+                                    game_last_played_date,
+                                )
                 else:
                     logger.info(f"⊘ 游玩时间未变更，跳过更新: {game_name}")
                     skipped_count += 1
@@ -371,6 +457,7 @@ def sync_games_to_notion():
     logger.info("\n" + "=" * 50)
     logger.info(f"同步完成! 新增: {added_count}, 更新: {updated_count}, 跳过: {skipped_count}")
     logger.info("=" * 50)
+
 
 
 def add_single_game_by_appid(appid):
@@ -459,6 +546,7 @@ def add_multiple_games_by_appids(appids_str):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Steam 游戏同步到 Notion")
     parser.add_argument('--debug', action='store_true', help='启用调试日志')
+    parser.add_argument('--daily', action='store_true', help='同步 Notion 每日游戏记录')
     
     # 添加子命令或位置参数支持 add appid 的方式
     parser.add_argument('action', nargs='?', default='sync', help='执行的操作: sync (同步所有) 或 add')
@@ -467,21 +555,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # 配置日志
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO if not args.debug else logging.DEBUG)
-    
-    # 清除现有处理器
-    logger.handlers.clear()
-    
-    # 添加处理器
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
-    logger.addHandler(console_handler)
-    
-    if args.debug:
-        file_handler = logging.FileHandler("app.log", encoding="utf-8")
-        file_handler.setFormatter(logging.Formatter('[%(levelname)s] %(asctime)s - %(message)s'))
-        logger.addHandler(file_handler)
+    setup_logging(debug=args.debug, logfile="app.log" if args.debug else None)
     
     # 根据不同的操作执行相应的函数
     if args.action.lower() == 'add':
@@ -498,7 +572,7 @@ if __name__ == "__main__":
             # 单个 appid
             add_single_game_by_appid(int(args.appid))
     elif args.action.lower() == 'sync':
-        sync_games_to_notion()
+        sync_games_to_notion(sync_daily=args.daily)
     else:
         logger.error(f"未知的操作: {args.action}")
         logger.info("可用操作: sync (默认), add <appid>")

@@ -2,6 +2,7 @@ import logging
 import requests
 import time
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 # MISC
 MAX_RETRIES = 20
@@ -13,6 +14,24 @@ _logger = logging.getLogger(__name__)
 def get_logger(name=None):
     """获取 logger（统一入口，便于复用日志配置）"""
     return logging.getLogger(name)
+
+
+def setup_logging(debug=False, logfile=None):
+    """统一配置日志输出"""
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG if debug else logging.INFO)
+
+    if root_logger.handlers:
+        return
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
+    root_logger.addHandler(console_handler)
+
+    if logfile:
+        file_handler = logging.FileHandler(logfile, encoding="utf-8")
+        file_handler.setFormatter(logging.Formatter('[%(levelname)s] %(asctime)s - %(message)s'))
+        root_logger.addHandler(file_handler)
 
 
 def send_request_with_retry(
@@ -59,6 +78,21 @@ def parse_steam_date(text: str):
         except ValueError:
             pass
     return None
+
+
+def format_timestamp(timestamp, timezone=None, date_only=False):
+    """将 Unix 时间戳转为日期/日期时间字符串（支持时区）"""
+    if not timestamp:
+        return None
+
+    try:
+        tzinfo = ZoneInfo(timezone) if timezone else None
+    except Exception:
+        _logger.warning(f"无效时区: {timezone}，使用本地时区")
+        tzinfo = None
+
+    dt = datetime.fromtimestamp(timestamp, tz=tzinfo) if tzinfo else datetime.fromtimestamp(timestamp)
+    return dt.strftime("%Y-%m-%d") if date_only else dt.isoformat()
 
 
 def format_notion_multi_select(value):
