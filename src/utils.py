@@ -1,47 +1,52 @@
-import requests, time
-from datetime import datetime 
+import logging
+import requests
+import time
+from datetime import datetime
 
 # MISC
 MAX_RETRIES = 20
 RETRY_DELAY = 2
 
-def send_request_with_retry(
-    url, headers=None, json_data=None, method="post", max_retries=3
-):
-    for attempt in range(max_retries):
-        try:
-            if method == "patch":
-                response = requests.patch(url, headers=headers, json=json_data)
-            elif method == "post":
-                response = requests.post(url, headers=headers, json=json_data)
-            elif method == "get":
-                response = requests.get(url)
+_logger = logging.getLogger(__name__)
 
-            response.raise_for_status()  # 如果响应状态码不是200系列，则抛出HTTPError异常
+
+def get_logger(name=None):
+    """获取 logger（统一入口，便于复用日志配置）"""
+    return logging.getLogger(name)
+
+
+def send_request_with_retry(
+    url,
+    headers=None,
+    json_data=None,
+    method="post",
+    retries=MAX_RETRIES,
+    retry_delay=RETRY_DELAY,
+    timeout=10,
+):
+    """统一的请求函数（带重试和指数退避）"""
+    for attempt in range(retries):
+        try:
+            method_lower = method.lower()
+            if method_lower == "patch":
+                response = requests.patch(url, headers=headers, json=json_data, timeout=timeout)
+            elif method_lower == "post":
+                response = requests.post(url, headers=headers, json=json_data, timeout=timeout)
+            elif method_lower == "get":
+                response = requests.get(url, headers=headers, timeout=timeout)
+            else:
+                raise ValueError(f"Unsupported method: {method}")
+
+            response.raise_for_status()
             return response
-        
-        except requests.exceptions.HTTPError as e:
-            # HTTP 错误（4xx, 5xx）
-            print(f"Request Exception occurred: <{e}> .Error: {e.response.text}")
-            if attempt < max_retries - 1:
-                print(f"Retrying... (Attempt {attempt + 1}/{max_retries})")
-                time.sleep(2 ** attempt)  # 指数退避
-            else:
-                raise
-        
+
         except requests.exceptions.RequestException as e:
-            # 其他网络错误（SSL, 超时等）
-            print(f"Request Exception occurred: <{e}>")
-            if attempt < max_retries - 1:
-                print(f"Retrying... (Attempt {attempt + 1}/{max_retries})")
-                time.sleep(2 ** attempt)  # 指数退避
+            _logger.warning(f"Request failed (attempt {attempt + 1}/{retries}): {e}")
+            if attempt < retries - 1:
+                time.sleep(retry_delay * (2 ** attempt))  # 指数退避
             else:
+                _logger.error(f"Max retries exceeded for {url}")
                 raise
-        
-        except Exception as e:
-            # 未预期的错误
-            print(f"Unexpected error: <{e}>")
-            raise
 
 def parse_steam_date(text: str): 
     text = text.strip() 
@@ -54,3 +59,28 @@ def parse_steam_date(text: str):
         except ValueError:
             pass
     return None
+
+
+def format_notion_multi_select(value):
+    """
+    处理 multi_select 类型数据
+    支持：
+      - None / ""              -> []
+      - "A, B"                 -> [{"name": "A"}, {"name": "B"}]
+      - ["A", "B, C"]          -> [{"name": "A"}, {"name": "B"}, {"name": "C"}]
+      - ["A", "B", "C"]        -> [{"name": "A"}, {"name": "B"}, {"name": "C"}]
+    """
+    if not value:
+        return []
+
+    if isinstance(value, str):
+        value = [value]
+
+    items = [
+        x.strip()
+        for s in value
+        for x in (s.split(",") if isinstance(s, str) else [s])
+        if str(x).strip()
+    ]
+
+    return [{"name": item} for item in items]

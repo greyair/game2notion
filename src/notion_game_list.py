@@ -4,73 +4,21 @@ Steam 游戏信息同步到 Notion
 """
 
 import argparse
-import requests
 import time
 import logging
 from datetime import datetime
 from config import (
     STEAM_API_KEY, STEAM_USER_ID, NOTION_API_KEY, NOTION_GAMES_DATABASE_ID,
-    NOTION_PROPERTIES, include_played_free_games, enable_item_update, enable_filter, MAX_RETRIES, RETRY_DELAY,
+    include_played_free_games, enable_item_update, enable_filter,
     get_property_name
 )
 from platforms.steam import (
     get_owned_games_from_steam, get_achievements_from_steam, 
     parse_achievements_info, get_steam_store_info
 )
-from utils import parse_steam_date
+from utils import format_notion_multi_select, get_logger, parse_steam_date, send_request_with_retry
 
-logger = logging.getLogger(__name__)
-
-
-# ==================== UTILS ====================
-def build_notion_multi_select(value):
-    """
-    处理 multi_select 类型数据
-    支持：
-      - None / ""              -> []
-      - "A, B"                 -> [{"name": "A"}, {"name": "B"}]
-      - ["A", "B, C"]          -> [{"name": "A"}, {"name": "B"}, {"name": "C"}]
-      - ["A", "B", "C"]        -> [{"name": "A"}, {"name": "B"}, {"name": "C"}]
-    """
-    if not value:
-        return []
-    
-    if isinstance(value, str):
-        value = [value]
-    
-    items = [
-        x.strip()
-        for s in value
-        for x in (s.split(",") if isinstance(s, str) else [s])
-        if str(x).strip()
-    ]
-    
-    return [{"name": item} for item in items]
-
-
-def send_request_with_retry(url, headers=None, json_data=None, method="get", retries=MAX_RETRIES):
-    """统一的请求函数"""
-    for attempt in range(retries):
-        try:
-            if method.lower() == "get":
-                response = requests.get(url, timeout=10)
-            elif method.lower() == "post":
-                response = requests.post(url, headers=headers, json=json_data, timeout=10)
-            elif method.lower() == "patch":
-                response = requests.patch(url, headers=headers, json=json_data, timeout=10)
-            else:
-                raise ValueError(f"Unsupported method: {method}")
-            
-            response.raise_for_status()
-            return response
-        
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Request failed (attempt {attempt + 1}/{retries}): {e}")
-            if attempt < retries - 1:
-                time.sleep(RETRY_DELAY * (2 ** attempt))  # 指数退避
-            else:
-                logger.error(f"Max retries exceeded for {url}")
-                raise
+logger = get_logger(__name__)
 
 
 def build_game_properties(game, achievements_info, steam_store_data):
@@ -144,28 +92,28 @@ def build_game_properties(game, achievements_info, steam_store_data):
         }
     
     # ========== 分类字段 ==========
-    genres = build_notion_multi_select(steam_store_data.get("genres", []))
+    genres = format_notion_multi_select(steam_store_data.get("genres", []))
     if genres:
         props[get_property_name("genres")] = {
             "type": "multi_select",
             "multi_select": genres
         }
     
-    developers = build_notion_multi_select(steam_store_data.get("developers", []))
+    developers = format_notion_multi_select(steam_store_data.get("developers", []))
     if developers:
         props[get_property_name("developers")] = {
             "type": "multi_select",
             "multi_select": developers
         }
     
-    publishers = build_notion_multi_select(steam_store_data.get("publishers", []))
+    publishers = format_notion_multi_select(steam_store_data.get("publishers", []))
     if publishers:
         props[get_property_name("publishers")] = {
             "type": "multi_select",
             "multi_select": publishers
         }
     
-    tags = build_notion_multi_select(steam_store_data.get("tag", []))
+    tags = format_notion_multi_select(steam_store_data.get("tag", []))
     if tags:
         props[get_property_name("tags")] = {
             "type": "multi_select",
@@ -356,14 +304,22 @@ def should_record_game(game, achievements_info):
     return True
 
 
+def _fetch_game_details(game):
+    """获取成就与商店信息（仅在需要时调用）"""
+    achievements_data = get_achievements_from_steam(game, STEAM_API_KEY, STEAM_USER_ID)
+    achievements_info = parse_achievements_info(achievements_data)
+    steam_store_data = get_steam_store_info(game["appid"])
+    if steam_store_data.get("tag") == []:
+        steam_store_data = get_steam_store_info(game["appid"], country="SG")
+    return achievements_info, steam_store_data
+
+
 # ==================== MAIN ====================
-def main():
-    """主函数"""
+def sync_games_to_notion():
+    """同步 Steam 游戏到 Notion"""
     logger.info("=" * 50)
     logger.info("开始同步 Steam 游戏到 Notion")
     logger.info("=" * 50)
-    
-    test = get_steam_store_info("387290", country="SG")
     
     # 获取 Steam 游戏列表
     games = get_owned_games_from_steam(STEAM_API_KEY, STEAM_USER_ID, include_played_free_games)
@@ -382,12 +338,6 @@ def main():
         game_name = game["name"]
         logger.info(f"\n[{idx}/{len(games)}] 处理: {game_name}")
         
-        achievements_data = get_achievements_from_steam(game, STEAM_API_KEY, STEAM_USER_ID)
-        achievements_info = parse_achievements_info(achievements_data)
-        steam_store_data = get_steam_store_info(game["appid"])
-        if steam_store_data["tag"] == []:
-            steam_store_data = get_steam_store_info(game["appid"], country="SG")
-        
         # 在本地查找游戏
         game_key = (game_name, "Steam")
         notion_game = notion_games_map.get(game_key)
@@ -401,6 +351,7 @@ def main():
                 game_last_played = datetime.fromtimestamp(game['rtime_last_played']).strftime("%Y-%m-%d") if game['rtime_last_played'] else None
                 
                 if last_play != game_last_played:
+                    achievements_info, steam_store_data = _fetch_game_details(game)
                     if update_game_in_notion(page_id, game, achievements_info, steam_store_data):
                         updated_count += 1
                 else:
@@ -411,6 +362,7 @@ def main():
                 skipped_count += 1
         else:
             # 游戏不存在 -> 新增
+            achievements_info, steam_store_data = _fetch_game_details(game)
             if add_game_to_notion(game, achievements_info, steam_store_data):
                 added_count += 1
         
@@ -546,7 +498,7 @@ if __name__ == "__main__":
             # 单个 appid
             add_single_game_by_appid(int(args.appid))
     elif args.action.lower() == 'sync':
-        main()
+        sync_games_to_notion()
     else:
         logger.error(f"未知的操作: {args.action}")
         logger.info("可用操作: sync (默认), add <appid>")
