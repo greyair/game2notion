@@ -10,14 +10,14 @@ from urllib import request
 from http import cookiejar
 
 # ==================== STEAM API ====================
-def get_owned_games_from_steam(steam_api_key, steam_user_id, include_played_free_games="true"):
+def get_owned_games_from_steam(steam_api_key, steam_user_id, include_played_free_games=True):
     """获取 Steam 所有游戏"""
     url = "http://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/"
     params = {
         "key": steam_api_key,
         "steamid": steam_user_id,
         "include_appinfo": "True",
-        "include_played_free_games": "True" if include_played_free_games == "true" else "False"
+        "include_played_free_games": "True" if include_played_free_games else "False"
     }
     
     try:

@@ -6,18 +6,18 @@ Steam 游戏信息同步到 Notion
 import argparse
 import time
 from datetime import datetime
-from .config import (
+from config import (
     STEAM_API_KEY, STEAM_USER_ID, NOTION_API_KEY, NOTION_GAMES_DATABASE_ID,
     NOTION_DAILY_RECORDS_DB_ID,
     include_played_free_games, enable_item_update, enable_filter, enable_full_update,
     TIMEZONE,
     get_property_name
 )
-from .platforms.steam import (
+from platforms.steam import (
     get_owned_games_from_steam, get_achievements_from_steam, 
     parse_achievements_info, get_steam_store_info
 )
-from .utils import (
+from utils import (
     format_timestamp,
     format_notion_multi_select,
     get_logger,
@@ -456,20 +456,20 @@ def sync_games_to_notion(sync_daily=False):
         
         if notion_game:
             # 游戏已存在 -> 更新
-            if enable_item_update and (notion_game["last_play"] is not None):
+            if enable_item_update and (game.get("rtime_last_played") > 0):
                 page_id = notion_game["page_id"]
                 last_play = notion_game["last_play"]
                 logger.info(f"⊘ 上次游玩: {last_play}")
                 game_last_played = format_timestamp(game.get("rtime_last_played"), TIMEZONE, date_only=False)
                 game_last_played_date = format_timestamp(game.get("rtime_last_played"), TIMEZONE, date_only=True)
+                previous_minutes = int(notion_game.get("playtime", 0) or 0)
+                current_minutes = int(game.get("playtime_forever", 0))
                 
-                if last_play != game_last_played:
+                if last_play != game_last_played or previous_minutes != current_minutes:
                     achievements_info, steam_store_data = _fetch_game_details(game)
                     if update_game_in_notion(page_id, game, achievements_info, steam_store_data):
                         updated_count += 1
                         if sync_daily and NOTION_DAILY_RECORDS_DB_ID:
-                            previous_minutes = int(notion_game.get("playtime", 0) or 0)
-                            current_minutes = int(game.get("playtime_forever", 0))
                             playtime_today_minutes = current_minutes - previous_minutes
                             if playtime_today_minutes > 0:
                                 _create_daily_record(

@@ -92,7 +92,11 @@ def format_timestamp(timestamp, timezone=None, date_only=False):
         tzinfo = None
 
     dt = datetime.fromtimestamp(timestamp, tz=tzinfo) if tzinfo else datetime.fromtimestamp(timestamp)
-    return dt.strftime("%Y-%m-%d") if date_only else dt.isoformat()
+    if date_only:
+        return dt.strftime("%Y-%m-%d")
+
+    dt = dt.replace(second=0, microsecond=0)
+    return dt.isoformat(timespec="milliseconds")
 
 
 def format_notion_multi_select(value):

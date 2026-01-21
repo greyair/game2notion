@@ -2,8 +2,8 @@ name: Auto Sync Games
 
 on:
   schedule:
-    # 北京时间 23:55 运行 sync --daily (UTC 15:55)
-    - cron: '55 15 * * *'
+    # 北京时间 23:50 运行 sync --daily (UTC 15:50)
+    - cron: '50 15 * * *'
   
   # 允许手动触发
   workflow_dispatch:
@@ -17,10 +17,10 @@ on:
           - sync_daily
 
 jobs:
-  # 每天 23:55 运行 sync --daily
+  # 每天 23:50 运行 sync --daily
   sync-games-daily:
     if: |
-      (github.event_name == 'schedule' && github.event.schedule == '55 15 * * *') ||
+      (github.event_name == 'schedule' && github.event.schedule == '50 15 * * *') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.task == 'sync_daily')
     
     runs-on: ubuntu-latest
@@ -38,8 +38,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
     
-    - name: Run game list sync (Daily - Beijing Time 23:55)
+    - name: Run game list sync (Daily - Beijing Time 23:50)
       env:
+        PYTHONPATH: ./src
         STEAM_API_KEY: ${{ secrets.STEAM_API_KEY }}
         STEAM_USER_ID: ${{ secrets.STEAM_USER_ID }}
         NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
