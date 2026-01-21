@@ -101,11 +101,8 @@ src/
 ├── config.py              # 配置文件
 ├── utils.py               # 工具函数
 ├── notion_game_list.py    # 游戏库同步
-├── migrate_playtime_to_minutes.py  # 迁移游玩时间为分钟
 └── platforms/
     └── steam.py           # Steam API 接口
-
-tests/                      # 单元测试
 .github/workflows/          # GitHub Actions 工作流
 ```
 
