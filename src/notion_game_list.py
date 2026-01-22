@@ -5,7 +5,8 @@ Steam 游戏信息同步到 Notion
 
 import argparse
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from config import (
     STEAM_API_KEY, STEAM_USER_ID, NOTION_API_KEY, NOTION_GAMES_DATABASE_ID,
     NOTION_DAILY_RECORDS_DB_ID,
@@ -27,6 +28,48 @@ from utils import (
 )
 
 logger = get_logger(__name__)
+
+
+def _get_tzinfo(timezone):
+    """获取时区信息（非法时区回退到本地时区）"""
+    if not timezone:
+        return None
+
+    try:
+        return ZoneInfo(timezone)
+    except Exception:
+        logger.warning(f"无效时区: {timezone}，使用本地时区")
+        return None
+
+
+def _split_playtime_by_date(last_played_timestamp, playtime_minutes, timezone):
+    """按日期拆分游玩分钟数（跨天时拆分）"""
+    if not last_played_timestamp or playtime_minutes <= 0:
+        return []
+
+    tzinfo = _get_tzinfo(timezone)
+    end_dt = datetime.fromtimestamp(last_played_timestamp, tz=tzinfo) if tzinfo else datetime.fromtimestamp(last_played_timestamp)
+    start_dt = end_dt - timedelta(minutes=playtime_minutes)
+
+    if start_dt.date() == end_dt.date():
+        return [(end_dt.date().isoformat(), playtime_minutes)]
+
+    allocations = []
+    current_start = start_dt
+
+    while current_start.date() < end_dt.date():
+        next_day = current_start.date() + timedelta(days=1)
+        day_end = datetime.combine(next_day, datetime.min.time(), tzinfo=tzinfo) if tzinfo else datetime.combine(next_day, datetime.min.time())
+        minutes = int((day_end - current_start).total_seconds() / 60)
+        if minutes > 0:
+            allocations.append((current_start.date().isoformat(), minutes))
+        current_start = day_end
+
+    last_minutes = int((end_dt - current_start).total_seconds() / 60)
+    if last_minutes > 0:
+        allocations.append((end_dt.date().isoformat(), last_minutes))
+
+    return allocations
 
 
 def build_game_properties(game, achievements_info, steam_store_data):
@@ -472,13 +515,22 @@ def sync_games_to_notion(sync_daily=False):
                         if sync_daily and NOTION_DAILY_RECORDS_DB_ID:
                             playtime_today_minutes = current_minutes - previous_minutes
                             if playtime_today_minutes > 0:
-                                _create_daily_record(
-                                    game_name,
+                                allocations = _split_playtime_by_date(
+                                    game.get("rtime_last_played"),
                                     playtime_today_minutes,
-                                    current_minutes,
-                                    page_id,
-                                    game_last_played_date,
+                                    TIMEZONE,
                                 )
+                                if not allocations:
+                                    allocations = [(game_last_played_date, playtime_today_minutes)]
+
+                                for record_date, minutes in allocations:
+                                    _create_daily_record(
+                                        game_name,
+                                        minutes,
+                                        current_minutes,
+                                        page_id,
+                                        record_date,
+                                    )
                 else:
                     logger.info(f"⊘ 游玩时间未变更，跳过更新: {game_name}")
                     skipped_count += 1
