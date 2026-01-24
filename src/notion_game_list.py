@@ -491,7 +491,6 @@ def sync_games_to_notion(sync_daily=False):
     
     for idx, game in enumerate(games, 1):
         game_name = game["name"]
-        logger.info(f"\n[{idx}/{len(games)}] 处理: {game_name}")
         
         # 在本地查找游戏
         game_key = (game_name, "Steam")
@@ -502,7 +501,6 @@ def sync_games_to_notion(sync_daily=False):
             if enable_item_update and (game.get("rtime_last_played") > 0):
                 page_id = notion_game["page_id"]
                 last_play = notion_game["last_play"]
-                logger.info(f"⊘ 上次游玩: {last_play}")
                 game_last_played = format_timestamp(game.get("rtime_last_played"), TIMEZONE, date_only=False)
                 game_last_played_date = format_timestamp(game.get("rtime_last_played"), TIMEZONE, date_only=True)
                 previous_minutes = int(notion_game.get("playtime", 0) or 0)
@@ -532,10 +530,8 @@ def sync_games_to_notion(sync_daily=False):
                                         record_date,
                                     )
                 else:
-                    logger.info(f"⊘ 游玩时间未变更，跳过更新: {game_name}")
                     skipped_count += 1
             else:
-                logger.info(f"⊘ 跳过更新: {game_name}")
                 skipped_count += 1
         else:
             # 游戏不存在 -> 新增
