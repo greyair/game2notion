@@ -20,7 +20,7 @@ jobs:
   # 每天 00:00 / 12:00 运行 sync --daily
   sync-games-daily:
     if: |
-      (github.event_name == 'schedule' && github.event.schedule == '0 4,16 * * *') ||
+      (github.event_name == 'schedule') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.task == 'sync_daily')
     
     runs-on: ubuntu-latest
