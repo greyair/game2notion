@@ -37,7 +37,10 @@ NOTION_PROPERTIES = {
     "platform": "游戏平台",               # 游戏平台（select）
     "price": "商店价格",                  # 商店价格（rich_text）
     "review": "玩家评分",                 # 玩家评分（select）
-    "appid": "appid"                      # appid（rich_text）
+    "appid": "appid",                     # appid（rich_text）
+    "activation_time": "激活时间",         # 激活时间（date）
+    "purchase_channel": "购买渠道",        # 购买渠道（select）
+    "purchase_time": "购买时间"           # 购买时间（date）
 }
 
 # 每日记录属性
