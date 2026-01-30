@@ -2,8 +2,8 @@ name: Auto Sync Games
 
 on:
   schedule:
-    # 北京时间 00:00 / 12:00 运行 sync --daily (UTC 16:00 / 04:00)
-    - cron: '0 4,16 * * *'
+    - cron: '0 16 * * *'  # 北京时间 00:00
+    - cron: '0 4 * * *'   # 北京时间 12:00
   
   # 允许手动触发
   workflow_dispatch:
